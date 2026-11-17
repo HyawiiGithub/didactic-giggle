@@ -44,9 +44,6 @@ h1{font-size:clamp(64px,19vw,200px);letter-spacing:.14em;margin:0 0 0 .14em;font
 .btn{font:inherit;font-size:clamp(15px,2.8vw,19px);padding:13px 26px;border:2px solid var(--gold);background:transparent;color:var(--paper);cursor:pointer;text-decoration:none;border-radius:2px}
 .btn.main{background:var(--gold);color:var(--ink)}
 .btn:focus-visible{outline:2px solid var(--paper);outline-offset:3px}
-#snd{position:absolute;right:14px;top:calc(env(safe-area-inset-top,0px) + 12px);font-size:14px;padding:7px 12px;border:1px solid rgba(236,226,200,.4);background:rgba(8,10,14,.6);color:var(--paper);border-radius:20px;cursor:pointer;font-family:inherit;z-index:5}
-#snd.pulse{animation:pl 1.6s infinite}
-@keyframes pl{50%{border-color:var(--gold);color:var(--gold)}}
 @media (prefers-reduced-motion:reduce){*{animation-duration:.01s!important;transition-duration:.01s!important}}
 </style>
 </head>
@@ -83,7 +80,6 @@ h1{font-size:clamp(64px,19vw,200px);letter-spacing:.14em;margin:0 0 0 .14em;font
     <button class="btn" id="again">Replay trailer</button>
   </div>
 </div>
-<button id="snd" class="pulse">Tap for sound</button>
 </div>
 
 <script>
@@ -134,46 +130,64 @@ var EV=[
 [2022,'war','War in Ukraine',[[31,49]]]
 ];
 
-// ---- audio: layered drone, wind, heartbeat, year ticks, event sfx
-var ac,mb,NB,muted=false,hintOn=true;
-function ok(){return ac&&ac.state==='running'&&!muted}
+// ---- audio: generative orchestral-style score (Am-F-C-G at 90 BPM) plus event sfx
+var ac,mb,NB,mi=0,ii=0,BPM=90,E8=60/BPM/2;
+var CH=[[55,[220,261.63,329.63]],[43.65,[174.61,220,261.63]],[65.41,[196,261.63,329.63]],[49,[196,246.94,293.66]]];
+function ok(){return ac&&ac.state==='running'}
 function initAudio(){try{
   ac=new(window.AudioContext||window.webkitAudioContext)();mb=ac.createGain();mb.gain.value=0;
-  var cp=ac.createDynamicsCompressor();mb.connect(cp);cp.connect(ac.destination);
+  var cp=ac.createDynamicsCompressor();cp.threshold.value=-18;cp.ratio.value=4;mb.connect(cp);cp.connect(ac.destination);
   NB=ac.createBuffer(1,ac.sampleRate*2,ac.sampleRate);var d=NB.getChannelData(0);for(var i=0;i<d.length;i++)d[i]=Math.random()*2-1;
-  var lp=ac.createBiquadFilter();lp.type='lowpass';lp.frequency.value=380;lp.connect(mb);
-  [55,55.3,82.4,110.6].forEach(function(f){var o=ac.createOscillator();o.type='sawtooth';o.frequency.value=f;var g=ac.createGain();g.gain.value=.1;o.connect(g);g.connect(lp);o.start()});
-  var l=ac.createOscillator();l.frequency.value=.07;var lg=ac.createGain();lg.gain.value=220;l.connect(lg);lg.connect(lp.frequency);l.start();
+  var lp=ac.createBiquadFilter();lp.type='lowpass';lp.frequency.value=320;lp.connect(mb);
+  [55,55.3,82.4].forEach(function(f){var o=ac.createOscillator();o.type='sawtooth';o.frequency.value=f;var g=ac.createGain();g.gain.value=.06;o.connect(g);g.connect(lp);o.start()});
+  var l=ac.createOscillator();l.frequency.value=.07;var lg=ac.createGain();lg.gain.value=180;l.connect(lg);lg.connect(lp.frequency);l.start();
   var n=ac.createBufferSource();n.buffer=NB;n.loop=true;var bp=ac.createBiquadFilter();bp.type='bandpass';bp.frequency.value=500;bp.Q.value=.7;
-  var wg=ac.createGain();wg.gain.value=.05;var l2=ac.createOscillator();l2.frequency.value=.13;var l2g=ac.createGain();l2g.gain.value=.03;l2.connect(l2g);l2g.connect(wg.gain);l2.start();
-  n.connect(bp);bp.connect(wg);wg.connect(mb);n.start();
+  var wg=ac.createGain();wg.gain.value=.04;n.connect(bp);bp.connect(wg);wg.connect(mb);n.start();
   ac.onstatechange=function(){if(ac.state==='running')wake()};
 }catch(e){ac=null}}
-function wake(){if(!ac||ac.state!=='running')return;var t=ac.currentTime;mb.gain.cancelScheduledValues(t);mb.gain.setValueAtTime(0,t);mb.gain.linearRampToValueAtTime(muted?0:.8,t+3);hide()}
-function hide(){var b=$('snd');b.classList.remove('pulse');b.textContent=muted?'Sound off':'Sound on'}
+function wake(){if(!ac||ac.state!=='running')return;var t=ac.currentTime;mb.gain.cancelScheduledValues(t);mb.gain.setValueAtTime(0,t);mb.gain.linearRampToValueAtTime(.8,t+2.5)}
 function unlock(){if(ac&&ac.state!=='running')ac.resume().then(wake)}
 ['pointerdown','keydown','touchend','click'].forEach(function(e){addEventListener(e,unlock,{passive:true})});
-$('snd').onclick=function(ev){ev.stopPropagation();if(ac&&ac.state==='running'){muted=!muted;mb.gain.value=muted?0:.8;hide()}else unlock()};
-function tone(ty,f0,f1,dur,vol,att){var t=ac.currentTime,o=ac.createOscillator(),g=ac.createGain();o.type=ty;o.frequency.setValueAtTime(f0,t);if(f1!==f0)o.frequency.exponentialRampToValueAtTime(f1,t+dur);
+function tone(ty,f0,f1,dur,vol,att,d){var t=ac.currentTime+(d||0),o=ac.createOscillator(),g=ac.createGain();o.type=ty;o.frequency.setValueAtTime(f0,t);if(f1!==f0)o.frequency.exponentialRampToValueAtTime(f1,t+dur);
   g.gain.setValueAtTime(.0001,t);g.gain.linearRampToValueAtTime(vol,t+(att||.01));g.gain.exponentialRampToValueAtTime(.001,t+dur);o.connect(g);g.connect(mb);o.start(t);o.stop(t+dur+.1)}
-function nz(f,ty,dur,vol,f2,att){var t=ac.currentTime,s=ac.createBufferSource();s.buffer=NB;var fl=ac.createBiquadFilter();fl.type=ty;fl.frequency.setValueAtTime(f,t);if(f2)fl.frequency.exponentialRampToValueAtTime(f2,t+dur);
+function nz(f,ty,dur,vol,f2,att,d){var t=ac.currentTime+(d||0),s=ac.createBufferSource();s.buffer=NB;var fl=ac.createBiquadFilter();fl.type=ty;fl.frequency.setValueAtTime(f,t);if(f2)fl.frequency.exponentialRampToValueAtTime(f2,t+dur);
   var g=ac.createGain();g.gain.setValueAtTime(.0001,t);g.gain.linearRampToValueAtTime(vol,t+(att||.01));g.gain.exponentialRampToValueAtTime(.001,t+dur);s.connect(fl);fl.connect(g);g.connect(mb);s.start(t);s.stop(t+dur+.1)}
+function pad(fs,d,dur,vol){var t=ac.currentTime+d,lp=ac.createBiquadFilter();lp.type='lowpass';lp.frequency.value=1500;var g=ac.createGain();
+  g.gain.setValueAtTime(.0001,t);g.gain.linearRampToValueAtTime(vol,t+.9);g.gain.linearRampToValueAtTime(vol*.8,t+dur*.8);g.gain.linearRampToValueAtTime(.0001,t+dur+1);lp.connect(g);g.connect(mb);
+  fs.forEach(function(f){[1,1.004,.5].forEach(function(m){var o=ac.createOscillator();o.type='sawtooth';o.frequency.value=f*m;var q=ac.createGain();q.gain.value=m===.5?.5:1;o.connect(q);q.connect(lp);o.start(t);o.stop(t+dur+1.1)})})}
+function pluck(f,d,vol,cut){var t=ac.currentTime+d,o=ac.createOscillator(),lp=ac.createBiquadFilter(),g=ac.createGain();o.type='sawtooth';o.frequency.value=f;lp.type='lowpass';lp.frequency.value=cut;
+  g.gain.setValueAtTime(.0001,t);g.gain.linearRampToValueAtTime(vol,t+.02);g.gain.exponentialRampToValueAtTime(.001,t+.3);o.connect(lp);lp.connect(g);g.connect(mb);o.start(t);o.stop(t+.4)}
+function taiko(d,v){tone('sine',95,36,.8,.8*v,.005,d);nz(500,'lowpass',.5,.5*v,100,.005,d)}
+function braam(){var t=ac.currentTime,lp=ac.createBiquadFilter(),g=ac.createGain();lp.type='lowpass';lp.frequency.setValueAtTime(180,t);lp.frequency.exponentialRampToValueAtTime(2600,t+.35);lp.frequency.exponentialRampToValueAtTime(320,t+4.5);
+  g.gain.setValueAtTime(.0001,t);g.gain.linearRampToValueAtTime(.5,t+.05);g.gain.exponentialRampToValueAtTime(.001,t+5);lp.connect(g);g.connect(mb);
+  [55,55.4,110,110.6,164.8].forEach(function(f){var o=ac.createOscillator();o.type='sawtooth';o.frequency.value=f;o.connect(lp);o.start(t);o.stop(t+5.1)})}
+function music(T){
+  if(!ac)return;
+  while(ii*.667+.6<=T+.12){var te=ii*.667+.6;if(te>5.2)break;if(ok()&&T-te<.2){var d=Math.max(0,te-T),f=[440,659.25,523.25,659.25,392,587.33,440,880][ii%8];tone('sine',f,f,2.4,.11,.01,d);tone('sine',f*2,f*2,1.2,.04,.01,d)}ii++}
+  while(5.5+mi*E8<=T+.12){var te2=5.5+mi*E8;if(te2>=40)break;
+    if(ok()&&T-te2<.2){var d2=Math.max(0,te2-T),bar=Math.floor(mi/8)%4,beat=mi%8,ch=CH[bar],inten=cl((te2-5.5)/26),roll=te2>=32;
+      if(beat===0)pad(ch[1],d2,8*E8,.045+.05*inten);
+      pluck(ch[0]*(beat%4===3?4:2),d2,.08+.1*inten,300+1000*inten+(roll?1500:0));
+      if(te2>=14&&(beat%2===0||roll))taiko(d2,(beat===0?1:.6)*(.5+.5*inten)+(roll?.2:0));
+      if(te2>=22&&beat%4===2)nz(2500,'bandpass',.2,.22,1200,.005,d2);
+      if(te2>=18)nz(7000,'highpass',.05,.04+.03*inten,0,.005,d2)}
+    mi++}
+}
 var S={
  boom:function(v){tone('sine',80,24,2.4,.9*v);nz(400,'lowpass',2.6,.6*v,60)},
  war:function(){S.boom(1);nz(150,'lowpass',3.5,.5,50,.3);setTimeout(function(){if(ok())S.boom(.5)},380)},
  crash:function(){tone('sawtooth',420,45,1.8,.22);S.boom(.7);nz(3000,'highpass',.5,.25,800)},
  chime:function(){tone('sine',880,880,2.2,.2);tone('sine',1320,1320,1.8,.12);tone('triangle',1760,1760,1.4,.06)},
- tick:function(){nz(3200,'bandpass',.05,.05)},
- thump:function(v){tone('sine',70,38,.28,.55*v);setTimeout(function(){if(ok())tone('sine',60,35,.25,.3*v)},210)},
+ tick:function(){nz(3200,'bandpass',.05,.04)},
  whoosh:function(){nz(200,'lowpass',1.6,.35,3000,.9)},
  riser:function(){tone('sawtooth',70,900,8,.12,7.5);nz(300,'highpass',8,.3,6000,7.5)},
- title:function(){S.boom(1.4);S.chime();nz(2000,'highpass',2,.3,400)}
+ title:function(){braam();S.boom(1.4);S.chime();pad([110,164.8,220,261.63,329.63,440],0,6,.14);nz(2000,'highpass',2,.3,400)}
 };
 function snd(n,a){if(ok())try{S[n](a)}catch(e){}}
 
 // ---- timeline
 var T0,T=0,evI=0,act=[],shockT=-9,capT=-9,lastY=0,nextBeat=0,riseDone=0,titleDone=0,introDone=0;
-function reset(){T0=performance.now();evI=0;act=[];shockT=-9;capT=-9;lastY=0;nextBeat=0;riseDone=0;titleDone=0;introDone=0;
+function reset(){T0=performance.now();evI=0;act=[];shockT=-9;capT=-9;lastY=0;nextBeat=0;mi=0;ii=0;riseDone=0;titleDone=0;introDone=0;
  ['l1','l2','l3','l4'].forEach(function(l){$(l).classList.remove('on')})}
 function sc(id,on){$(id).classList.toggle('on',on)}
 function lit(id,on){$(id).classList.toggle('on',on)}
@@ -194,7 +208,7 @@ function frame(now){
   if(y!==lastY){if(y%2===0&&T>5.5&&T<32)snd('tick');lastY=y}
   while(evI<EV.length&&T>5.5&&T<32&&EV[evI][0]<=y){fire(EV[evI],EV[evI][0]);evI++}
   if(T-capT>3.2)$('cap').style.opacity=0;
-  if(T>5.5&&T<32.5&&T>nextBeat){snd('thump',.5+e*.7);nextBeat=T+1.0-e*.35}
+  music(T);
   if(T>=32&&!riseDone){riseDone=1;snd('riser')}
   if(T>=40&&!titleDone){titleDone=1;snd('title')}
   [[32.2,'l1'],[34.2,'l2'],[36.2,'l3'],[38,'l4']].forEach(function(a,i,arr){lit(a[1],T>=a[0]&&T<(arr[i+1]?arr[i+1][0]:39.9))});
